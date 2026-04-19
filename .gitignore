@@ -1,0 +1,8 @@
+venv/
+.env
+node_modules/
+dist/
+build/
+*.log
+*.tmp
+.ipynb_checkpoints
