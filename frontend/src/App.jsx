@@ -1,44 +1,56 @@
 import React from "react";
 import {
-  BrowserRouter as Router,
-  Routes,
-  Route,
-  Navigate,
+  BrowserRouter as MainRouter,
+  Routes as RouteContainer,
+  Route as RoutePath,
+  Navigate as RedirectPage,
 } from "react-router-dom";
 
-import SignIn from "./pages/signin.jsx";
-import SignUp from "./pages/signup.jsx";
-import Profile from "./pages/profile.jsx";
+import LoginScreen from "./pages/signin.jsx";
+import RegisterScreen from "./pages/signup.jsx";
+import UserDashboard from "./pages/profile.jsx";
 
-import ProtectedRoute from "./components/protected_route.jsx";
+import SecureRoute from "./components/protected_route.jsx";
 
-function App() {
+function MainApplication() {
   return (
     <>
-      <Router>
-        <Routes>
-          <Route path="/signup" element={<SignUp />} />
-          <Route path="/signin" element={<SignIn />} />
-          <Route
+      <MainRouter>
+        <RouteContainer>
+
+          <RoutePath
+            path="/signup"
+            element={<RegisterScreen />}
+          />
+
+          <RoutePath
+            path="/signin"
+            element={<LoginScreen />}
+          />
+
+          <RoutePath
             path="/profile"
             element={
-              <ProtectedRoute>
-                <Profile />
-              </ProtectedRoute>
+              <SecureRoute>
+                <UserDashboard />
+              </SecureRoute>
             }
           />
-          <Route path="*" element={<Navigate to="/signup" replace />} />
-          {/* 
-              path="*" is a catch-all route that matches any undefined URL 
-              If we render <SignUp />, the SignUp page shows but the URL remains incorrect 
-              (e.g., /randompage still appears in the address bar)
-              Using <Navigate to="/signup" replace /> performs an actual redirect,
-              updating the browser URL to /signup and keeping the route and UI consistent 
-          */}
-        </Routes>
-      </Router>
+
+          <RoutePath
+            path="*"
+            element={
+              <RedirectPage
+                to="/signup"
+                replace
+              />
+            }
+          />
+
+        </RouteContainer>
+      </MainRouter>
     </>
   );
 }
 
-export default App;
+export default MainApplication;
