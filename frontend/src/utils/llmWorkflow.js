@@ -1,7 +1,7 @@
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 // const MODEL = 'llama-3.3-70b-versatile';
-const MODEL='llama3-8b-8192';
+const MODEL='llama-3.1-8b-instant';
 async function callGroq(prompt, maxTokens = 1500) {
   const res = await fetch(GROQ_URL, {
     method: 'POST',
