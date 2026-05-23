@@ -1,7 +1,4 @@
-// Before (local dev):
-const SERVER_URL = 'http://localhost:3001';
-
-
+// API server URL - uses environment variable or empty string for local API
 const SERVER_URL = import.meta.env.VITE_API_URL || '';
 
 export async function fetchFinancePosts() {
