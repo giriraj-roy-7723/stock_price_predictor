@@ -31,7 +31,7 @@ Return ONLY a valid JSON array, no explanation, no markdown, no backticks.
 Example: ["RELIANCE", "TCS", "INFY", "HDFCBANK"]
 
 CORPUS:
-${corpus.slice(0, 4000)}`);
+${corpus.slice(0, 2000)}`);
 
   try {
     return JSON.parse(text.trim());
