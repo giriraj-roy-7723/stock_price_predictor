@@ -1,5 +1,8 @@
-// src/financeInfoMiner/newsMiner.js
+// Before (local dev):
 const SERVER_URL = 'http://localhost:3001';
+
+
+const SERVER_URL = import.meta.env.VITE_API_URL || '';
 
 export async function fetchFinancePosts() {
   const res = await fetch(`${SERVER_URL}/api/mine`);
