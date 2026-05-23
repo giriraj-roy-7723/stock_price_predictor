@@ -6,75 +6,186 @@ const app = express();
 app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
 
-const REDDIT_CLIENT_ID = process.env.REDDIT_CLIENT_ID;
-const REDDIT_CLIENT_SECRET = process.env.REDDIT_CLIENT_SECRET;
+const NEWS_API_KEY = process.env.NEWS_API_KEY;
 
 
-async function getRedditToken() {
-  const credentials = Buffer.from(
-    `${REDDIT_CLIENT_ID}:${REDDIT_CLIENT_SECRET}`
-  ).toString('base64');
+async function fetchNewsAPI() {
+  try {
+    const queries = [
+      'Indian stock market NSE BSE',
+      'Sensex Nifty stocks India',
+      'India finance economy stocks',
+    ];
 
-  const res = await fetch('https://www.reddit.com/api/v1/access_token', {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'FinanceMiner/1.0',
+    const allArticles = [];
+
+    for (const q of queries) {
+      const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(q)}&language=en&sortBy=publishedAt&pageSize=15&apiKey=${NEWS_API_KEY}`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.articles) {
+        const articles = data.articles.map((a) => ({
+          title: a.title,
+          body: a.description || '',
+          source: a.source.name,
+          url: a.url,
+          published: a.publishedAt,
+          type: 'newsapi',
+        }));
+        allArticles.push(...articles);
+      }
+    }
+
+    return allArticles;
+  } catch (err) {
+    console.error('[NewsAPI] Error:', err.message);
+    return [];
+  }
+}
+
+
+async function fetchRSSFeed(url, sourceName) {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'FinSage/1.0' },
+    });
+    const xml = await res.text();
+
+
+    const items = [];
+    const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+    let match;
+
+    while ((match = itemRegex.exec(xml)) !== null) {
+      const item = match[1];
+
+      const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) ||
+        item.match(/<title>(.*?)<\/title>/))?.[1] || '';
+
+      const desc = (item.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/) ||
+        item.match(/<description>(.*?)<\/description>/))?.[1] || '';
+
+      const link = item.match(/<link>(.*?)<\/link>/)?.[1] || '';
+      const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1] || '';
+
+      if (title) {
+        items.push({
+          title: title.trim(),
+          body: desc.replace(/<[^>]*>/g, '').slice(0, 400).trim(),
+          source: sourceName,
+          url: link.trim(),
+          published: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+          type: 'rss',
+        });
+      }
+    }
+
+    return items;
+  } catch (err) {
+    console.error(`[RSS:${sourceName}] Error:`, err.message);
+    return [];
+  }
+}
+
+async function fetchAllRSS() {
+  const feeds = [
+    {
+      url: 'https://finshots.in/feed/',
+      name: 'Finshots',
     },
-    body: 'grant_type=client_credentials',
-  });
+    {
+      url: 'https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146842.cms',
+      name: 'Economic Times Markets',
+    },
+    {
+      url: 'https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms',
+      name: 'Economic Times',
+    },
+    {
+      url: 'https://www.moneycontrol.com/rss/business.xml',
+      name: 'MoneyControl',
+    },
+    {
+      url: 'https://feeds.feedburner.com/ndtvprofit-latest',
+      name: 'NDTV Profit',
+    },
+  ];
 
-  const data = await res.json();
-  return data.access_token;
+  const results = await Promise.allSettled(
+    feeds.map((f) => fetchRSSFeed(f.url, f.name))
+  );
+
+  return results
+    .filter((r) => r.status === 'fulfilled')
+    .flatMap((r) => r.value);
+}
+
+
+async function fetchYahooFinance() {
+  const tickers = ['RELIANCE.NS', 'TCS.NS', 'INFY.NS', 'HDFCBANK.NS', 'NIFTY50'];
+  const allItems = [];
+
+  for (const ticker of tickers) {
+    const items = await fetchRSSFeed(
+      `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${ticker}&region=IN&lang=en-IN`,
+      `Yahoo:${ticker}`
+    );
+    allItems.push(...items);
+  }
+
+  return allItems;
 }
 
 
 app.get('/api/mine', async (req, res) => {
   try {
-    const token = await getRedditToken();
+    console.log('[Server] Mining started...');
 
-    const subreddits = [
-      'IndianStockMarket',
-      'IndiaInvestments', 
-      'Sensex',
-      'stocks',
+    const [newsApiPosts, rssPosts, yahooPosts] = await Promise.allSettled([
+      fetchNewsAPI(),
+      fetchAllRSS(),
+      fetchYahooFinance(),
+    ]);
+
+    const allPosts = [
+      ...(newsApiPosts.status === 'fulfilled' ? newsApiPosts.value : []),
+      ...(rssPosts.status === 'fulfilled' ? rssPosts.value : []),
+      ...(yahooPosts.status === 'fulfilled' ? yahooPosts.value : []),
     ];
 
-    const allPosts = [];
+    // Deduplicate by title similarity
+    const seen = new Set();
+    const unique = allPosts.filter((p) => {
+      const key = p.title.slice(0, 40).toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
-    for (const sub of subreddits) {
-      const response = await fetch(
-        `https://oauth.reddit.com/r/${sub}/hot?limit=15`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'User-Agent': 'FinanceMiner/1.0',
-          },
-        }
-      );
-      const data = await response.json();
+    unique.sort((a, b) => new Date(b.published) - new Date(a.published));
 
-      const posts = data.data.children.map((post) => ({
-        title: post.data.title,
-        body: post.data.selftext?.slice(0, 500) || '',
-        upvotes: post.data.ups,
-        subreddit: post.data.subreddit,
-        url: `https://reddit.com${post.data.permalink}`,
-        created: new Date(post.data.created_utc * 1000).toISOString(),
-      }));
+    console.log(`[Server] Done. Total: ${unique.length} articles`);
 
-      allPosts.push(...posts);
-    }
-
-  
-    allPosts.sort((a, b) => b.upvotes - a.upvotes);
-
-    res.json({ success: true, posts: allPosts, count: allPosts.length });
+    res.json({
+      success: true,
+      posts: unique,
+      count: unique.length,
+      sources: {
+        newsapi: newsApiPosts.status === 'fulfilled' ? newsApiPosts.value.length : 0,
+        rss: rssPosts.status === 'fulfilled' ? rssPosts.value.length : 0,
+        yahoo: yahooPosts.status === 'fulfilled' ? yahooPosts.value.length : 0,
+      },
+    });
   } catch (err) {
-    console.error(err);
+    console.error('[Server] Fatal:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-app.listen(3001, () => console.log('Miner server running on :3001'));
+app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
+
+app.listen(3001, () => {
+  console.log('FinSage miner server running ');
+  console.log('   Test: http://localhost:3001/api/mine');
+});
